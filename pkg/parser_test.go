@@ -402,6 +402,70 @@ func TestEnsureCompliant(t *testing.T) {
 			draft:  2019,
 			want:   &Schema{Ref: "#", Type: "object"},
 		},
+
+		{
+			// A $ref contributes properties that additionalProperties cannot see,
+			// so closing the node must use unevaluatedProperties (draft 2019-09+).
+			// https://github.com/losisin/helm-values-schema-json/issues/317
+			name:                   "ref uses unevaluatedProperties when draft 2020",
+			schema:                 &Schema{Ref: "#/$defs/x", Type: "object"},
+			noAdditionalProperties: true,
+			draft:                  2020,
+			want: &Schema{
+				Ref:                   "#/$defs/x",
+				Type:                  "object",
+				UnevaluatedProperties: SchemaFalse(),
+			},
+		},
+
+		{
+			// allOf is an in-place applicator too: same class of bug as $ref.
+			// https://github.com/losisin/helm-values-schema-json/issues/324
+			name:                   "allOf uses unevaluatedProperties when draft 2020",
+			schema:                 &Schema{Type: "object", AllOf: []*Schema{{Ref: "#/$defs/x"}}},
+			noAdditionalProperties: true,
+			draft:                  2020,
+			want: &Schema{
+				AllOf:                 []*Schema{{Ref: "#/$defs/x"}},
+				UnevaluatedProperties: SchemaFalse(),
+			},
+		},
+
+		{
+			name:                   "ref uses unevaluatedProperties when draft 2019",
+			schema:                 &Schema{Ref: "#/$defs/x", Type: "object"},
+			noAdditionalProperties: true,
+			draft:                  2019,
+			want: &Schema{
+				Ref:                   "#/$defs/x",
+				Type:                  "object",
+				UnevaluatedProperties: SchemaFalse(),
+			},
+		},
+
+		{
+			// draft <= 7 has no unevaluatedProperties: the existing $ref inlining path
+			// wraps into allOf and keeps additionalProperties. Must stay unchanged.
+			name:                   "ref keeps additionalProperties via allOf wrap when draft 7",
+			schema:                 &Schema{Ref: "#", Type: "object"},
+			noAdditionalProperties: true,
+			draft:                  7,
+			want: &Schema{
+				AllOf: []*Schema{
+					{Type: "object", AdditionalProperties: SchemaFalse()},
+					{Ref: "#"},
+				},
+			},
+		},
+
+		{
+			// An explicitly set additionalProperties must be respected, not migrated.
+			name:                   "respect explicit additionalProperties on ref node",
+			schema:                 &Schema{Ref: "#", Type: "object", AdditionalProperties: SchemaTrue()},
+			noAdditionalProperties: true,
+			draft:                  2020,
+			want:                   &Schema{Ref: "#", Type: "object", AdditionalProperties: SchemaTrue()},
+		},
 		{
 			name:   "keep ref without fields when draft 7",
 			schema: &Schema{Ref: "#"},

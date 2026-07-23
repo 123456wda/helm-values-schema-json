@@ -193,8 +193,23 @@ func ensureCompliantRec(ptr Ptr, schema *Schema, visited map[*Schema]struct{}, n
 		return err
 	}
 
-	if schema.AdditionalProperties == nil && noAdditionalProperties && schema.IsType("object") {
-		schema.AdditionalProperties = SchemaFalse()
+	if noAdditionalProperties && schema.IsType("object") {
+		switch {
+		case draft >= 2019 && hasInPlaceApplicator(schema):
+			// An in-place applicator ($ref, allOf, anyOf, oneOf, if/then/else)
+			// contributes properties that `additionalProperties` cannot see
+			// (JSON Schema 2020-12 §10.3.2 / §11.3), so closing the object with
+			// additionalProperties:false would reject every property the applicator
+			// evaluates. `unevaluatedProperties` accounts for them, but exists only
+			// in draft 2019-09+. See issues #317 and #324.
+			if schema.AdditionalProperties == nil && schema.UnevaluatedProperties == nil {
+				schema.UnevaluatedProperties = SchemaFalse()
+			}
+		default:
+			if schema.AdditionalProperties == nil {
+				schema.AdditionalProperties = SchemaFalse()
+			}
+		}
 	}
 
 	switch {
@@ -232,6 +247,19 @@ func ensureCompliantRec(ptr Ptr, schema *Schema, visited map[*Schema]struct{}, n
 	}
 
 	return nil
+}
+
+// hasInPlaceApplicator reports whether the schema uses an in-place applicator that
+// contributes properties from outside this schema object's own properties /
+// patternProperties — properties `additionalProperties` cannot see but
+// `unevaluatedProperties` can. `not` is excluded: it is a negation and contributes none.
+func hasInPlaceApplicator(schema *Schema) bool {
+	return schema.Ref != "" ||
+		schema.DynamicRef != "" ||
+		len(schema.AllOf) > 0 ||
+		len(schema.AnyOf) > 0 ||
+		len(schema.OneOf) > 0 ||
+		schema.If != nil
 }
 
 // updateInternalRefsForDraft7 updates internal JSON pointer references after

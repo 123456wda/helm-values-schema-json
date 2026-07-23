@@ -96,6 +96,24 @@ func TestGenerateJsonSchema(t *testing.T) {
 		},
 
 		{
+			// A $ref node with noAdditionalProperties must be closed with
+			// unevaluatedProperties (not additionalProperties) at draft 2019+, while
+			// nested plain-object nodes still get additionalProperties:false.
+			// https://github.com/losisin/helm-values-schema-json/issues/317
+			name: "ref draft 2020 noAdditionalProperties",
+			config: &Config{
+				Draft:                  2020,
+				Indent:                 4,
+				NoAdditionalProperties: true,
+				Values: []string{
+					"../testdata/ref.yaml",
+				},
+				Output: "../testdata/ref-draft2020-noadditional_output.json",
+			},
+			templateSchemaFile: "../testdata/ref-draft2020-noadditional.schema.json",
+		},
+
+		{
 			name: "bundle/simple",
 			config: &Config{
 				Draft:      2020,

@@ -12,6 +12,7 @@ package testdata
 //go:generate go run .. --values meta.yaml --output meta.schema.json
 //go:generate go run .. --values noAdditionalProperties.yaml --output noAdditionalProperties.schema.json --no-additional-properties=true
 //go:generate go run .. --values ref.yaml --output ref-draft2020.schema.json --draft 2020
+//go:generate go run .. --values ref.yaml --output ref-draft2020-noadditional.schema.json --draft 2020 --no-additional-properties=true
 //go:generate go run .. --values ref.yaml --output ref-draft7.schema.json --draft 7
 //go:generate go run .. --values subschema.yaml --output subschema.schema.json
 
