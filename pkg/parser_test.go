@@ -415,6 +415,10 @@ func TestEnsureCompliant(t *testing.T) {
 				Ref:                   "#/$defs/x",
 				Type:                  "object",
 				UnevaluatedProperties: SchemaFalse(),
+
+				// unevaluatedProperties closes the schema to Helm's "global" key just
+				// like additionalProperties does, so it gets spelled out here too.
+				Properties: map[string]*Schema{"global": defaultGlobal()},
 			},
 		},
 
@@ -428,6 +432,7 @@ func TestEnsureCompliant(t *testing.T) {
 			want: &Schema{
 				AllOf:                 []*Schema{{Ref: "#/$defs/x"}},
 				UnevaluatedProperties: SchemaFalse(),
+				Properties:            map[string]*Schema{"global": defaultGlobal()},
 			},
 		},
 
@@ -440,6 +445,7 @@ func TestEnsureCompliant(t *testing.T) {
 				Ref:                   "#/$defs/x",
 				Type:                  "object",
 				UnevaluatedProperties: SchemaFalse(),
+				Properties:            map[string]*Schema{"global": defaultGlobal()},
 			},
 		},
 
@@ -455,6 +461,83 @@ func TestEnsureCompliant(t *testing.T) {
 					{Type: "object", AdditionalProperties: SchemaFalse()},
 					{Ref: "#"},
 				},
+			},
+		},
+
+		{
+			// A $defs entry is only ever applied through a $ref, so it cannot see the
+			// properties the referring schema contributes. Closing it would reject them;
+			// the referrer closes the instance location with unevaluatedProperties.
+			// https://github.com/losisin/helm-values-schema-json/issues/324
+			name: "keep defs open when draft 2020",
+			schema: &Schema{
+				Type: "object",
+				Ref:  "#/$defs/x",
+				Defs: map[string]*Schema{
+					"x": {Type: "object", Properties: map[string]*Schema{"fromRef": {Type: "string"}}},
+				},
+			},
+			noAdditionalProperties: true,
+			draft:                  2020,
+			want: &Schema{
+				Type: "object",
+				Ref:  "#/$defs/x",
+				Defs: map[string]*Schema{
+					"x": {Type: "object", Properties: map[string]*Schema{"fromRef": {Type: "string"}}},
+				},
+				UnevaluatedProperties: SchemaFalse(),
+				Properties:            map[string]*Schema{"global": defaultGlobal()},
+			},
+		},
+
+		{
+			// An allOf branch is applied in place alongside its siblings, so closing it
+			// would reject every property the other branches contribute. Nodes below it
+			// that are reached through "properties" are still closed as usual.
+			// https://github.com/losisin/helm-values-schema-json/issues/324
+			name: "keep allOf branch open when draft 2020",
+			schema: &Schema{
+				Type: "object",
+				AllOf: []*Schema{
+					{Type: "object", Properties: map[string]*Schema{"fromBranch": {Type: "object"}}},
+				},
+				Properties: map[string]*Schema{"own": {Type: "string"}},
+			},
+			noAdditionalProperties: true,
+			draft:                  2020,
+			want: &Schema{
+				AllOf: []*Schema{
+					{Type: "object", Properties: map[string]*Schema{
+						"fromBranch": {Type: "object", AdditionalProperties: SchemaFalse()},
+					}},
+				},
+				Properties: map[string]*Schema{
+					"own":    {Type: "string"},
+					"global": defaultGlobal(),
+				},
+				UnevaluatedProperties: SchemaFalse(),
+			},
+		},
+
+		{
+			// dependentSchemas is an in-place applicator too. Not reachable from a
+			// "# @schema" annotation, but bundling can inline a schema that uses it.
+			name: "dependentSchemas uses unevaluatedProperties when draft 2020",
+			schema: &Schema{
+				Type: "object",
+				DependentSchemas: map[string]*Schema{
+					"a": {Type: "object", Properties: map[string]*Schema{"b": {Type: "string"}}},
+				},
+			},
+			noAdditionalProperties: true,
+			draft:                  2020,
+			want: &Schema{
+				Type: "object",
+				DependentSchemas: map[string]*Schema{
+					"a": {Type: "object", Properties: map[string]*Schema{"b": {Type: "string"}}},
+				},
+				UnevaluatedProperties: SchemaFalse(),
+				Properties:            map[string]*Schema{"global": defaultGlobal()},
 			},
 		},
 
@@ -907,6 +990,34 @@ func TestAddMissingGlobalProperty(t *testing.T) {
 					"global": defaultGlobal(),
 				},
 			},
+		},
+
+		{
+			// A node whose properties come from an in-place applicator is closed with
+			// unevaluatedProperties instead, which rejects Helm's "global" key just
+			// the same. https://github.com/losisin/helm-values-schema-json/issues/317
+			name: "add when unevaluated properties disallows additional",
+			schema: &Schema{
+				Ref:                   "foobar.json",
+				UnevaluatedProperties: SchemaFalse(),
+			},
+			want: &Schema{
+				Ref:                   "foobar.json",
+				UnevaluatedProperties: SchemaFalse(),
+				Properties: map[string]*Schema{
+					"global": defaultGlobal(),
+				},
+			},
+		},
+		{
+			name:   "dont add when unevaluated properties allows additional",
+			schema: &Schema{Ref: "foobar.json", UnevaluatedProperties: SchemaTrue()},
+			want:   &Schema{Ref: "foobar.json", UnevaluatedProperties: SchemaTrue()},
+		},
+		{
+			name:   "dont add when unevaluated properties allows objects",
+			schema: &Schema{Ref: "foobar.json", UnevaluatedProperties: &Schema{Type: []any{"string", "object"}}},
+			want:   &Schema{Ref: "foobar.json", UnevaluatedProperties: &Schema{Type: []any{"string", "object"}}},
 		},
 	}
 
